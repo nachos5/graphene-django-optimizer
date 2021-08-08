@@ -1,5 +1,6 @@
 import functools
 
+from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import ForeignKey, Prefetch
 from django.db.models.constants import LOOKUP_SEP
@@ -9,18 +10,9 @@ from graphene.types.generic import GenericScalar
 from graphene.types.resolver import default_resolver
 from graphene_django import DjangoObjectType
 from graphql import ResolveInfo
-from graphql.execution.base import (
-    get_field_def,
-)
-from graphql.language.ast import (
-    FragmentSpread,
-    InlineFragment,
-    Variable,
-)
-from graphql.type.definition import (
-    GraphQLInterfaceType,
-    GraphQLUnionType,
-)
+from graphql.execution.base import get_field_def
+from graphql.language.ast import FragmentSpread, InlineFragment, Variable
+from graphql.type.definition import GraphQLInterfaceType, GraphQLUnionType
 
 from .utils import is_iterable
 
@@ -47,7 +39,14 @@ class QueryOptimizer(object):
 
     def __init__(self, info, **options):
         self.root_info = info
-        self.disable_abort_only = options.pop("disable_abort_only", False)
+        self.disable_abort_only = options.pop(
+            "disable_abort_only",
+            settings.GQL_ABORT_ONLY_DEFAULT
+            if "GQL_ABORT_ONLY_DEFAULT" in settings
+            else False,
+        )
+        # abort no matter what
+        self.abort_only = options.pop("abort_only", False)
 
     def optimize(self, queryset):
         info = self.root_info
@@ -114,6 +113,9 @@ class QueryOptimizer(object):
         store = QueryOptimizerStore(
             disable_abort_only=self.disable_abort_only,
         )
+
+        if self.abort_only:
+            store.only = lambda x: None
 
         selection_set = field_ast.selection_set
         if not selection_set:
@@ -248,6 +250,10 @@ class QueryOptimizer(object):
             optimization_hints.prefetch_related(info, *args),
             store.prefetch_list,
         )
+        self._add_optimization_hints(
+            optimization_hints.annotate(info, *args),
+            store.annotate_dict,
+        )
         if store.only_list is not None:
             self._add_optimization_hints(
                 optimization_hints.only(info, *args),
@@ -259,7 +265,11 @@ class QueryOptimizer(object):
         if source:
             if not is_iterable(source):
                 source = (source,)
-            target += source
+
+            if isinstance(target, dict):
+                target.update(source)
+            else:
+                target += source
 
     def _get_name_from_resolver(self, resolver):
         optimization_hints = self._get_optimization_hints(resolver)
@@ -334,6 +344,7 @@ class QueryOptimizerStore:
     def __init__(self, disable_abort_only=False):
         self.select_list = []
         self.prefetch_list = []
+        self.annotate_dict = {}
         self.only_list = []
         self.disable_abort_only = disable_abort_only
 
@@ -385,6 +396,9 @@ class QueryOptimizerStore:
         if self.prefetch_list:
             queryset = queryset.prefetch_related(*self.prefetch_list)
 
+        if self.annotate_dict:
+            queryset = queryset.annotate(**self.annotate_dict)
+
         if self.only_list:
             queryset = queryset.only(*self.only_list)
 
@@ -393,6 +407,7 @@ class QueryOptimizerStore:
     def append(self, store):
         self.select_list += store.select_list
         self.prefetch_list += store.prefetch_list
+        self.annotate_dict.update(store.annotate_dict)
         if self.only_list is not None:
             if store.only_list is None:
                 self.only_list = None

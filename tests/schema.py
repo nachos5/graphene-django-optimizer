@@ -1,4 +1,4 @@
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Count
 import graphene
 from graphene import ConnectionField, relay
 from graphene_django.fields import DjangoConnectionField
@@ -56,6 +56,7 @@ class ItemInterface(graphene.Interface):
         ConnectionField("tests.schema.ItemConnection", filter_input=ItemFilterInput()),
         prefetch_related=_prefetch_children,
     )
+    children_count = graphene.Int()
 
     def resolve_foo(root, info):
         return "bar"
@@ -84,6 +85,10 @@ class ItemInterface(graphene.Interface):
 
     def resolve_children_custom_filtered(root, info, *_args):
         return getattr(root, "gql_custom_filtered_children")
+
+    @gql_optimizer.resolver_hints(annotate={"gql_children_count": Count("children")})
+    def resolve_children_count(root, info, **kwargs):
+        return root.gql_children_count
 
 
 class BaseItemType(OptimizedDjangoObjectType):
