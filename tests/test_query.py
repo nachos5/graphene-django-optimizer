@@ -625,3 +625,22 @@ def test_should_annotate():
     items = gql_optimizer.query(qs, info)
     optimized_items = qs.only("id").annotate(gql_children_count=Count("children"))
     assert_query_equality(items, optimized_items)
+
+
+# @pytest.mark.django_db
+def test_abort_only():
+    info = create_resolve_info(
+        schema,
+        """
+        query {
+            items {
+                id
+                name
+            }
+        }
+    """,
+    )
+    qs = Item.objects.all()
+    items = gql_optimizer.query(qs, info, abort_only=True)
+    optimized_items = qs.all()
+    assert_query_equality(items, optimized_items)
