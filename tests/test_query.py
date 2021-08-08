@@ -2,7 +2,7 @@ import pytest
 
 from django.test.utils import CaptureQueriesContext
 from django.db import connection
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Count
 import graphene_django_optimizer as gql_optimizer
 
 from .graphql_utils import create_resolve_info
