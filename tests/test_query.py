@@ -616,3 +616,22 @@ def test_should_accept_two_hints_with_same_prefetch_to_attr_and_keep_one_of_them
         )
     )
     assert_query_equality(items, optimized_items)
+
+
+# @pytest.mark.django_db
+def test_abort_only():
+    info = create_resolve_info(
+        schema,
+        """
+        query {
+            items {
+                id
+                name
+            }
+        }
+    """,
+    )
+    qs = Item.objects.all()
+    items = gql_optimizer.query(qs, info, abort_only=True)
+    optimized_items = qs.all()
+    assert_query_equality(items, optimized_items)
