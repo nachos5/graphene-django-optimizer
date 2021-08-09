@@ -41,14 +41,17 @@ class QueryOptimizer(object):
         self.root_info = info
         self.disable_abort_only = options.pop(
             "disable_abort_only",
+            False,
+        )
+        # abort no matter what
+        self.abort_only = options.pop(
+            "abort_only",
             (
                 settings.GQL_ABORT_ONLY_DEFAULT
                 if hasattr(settings, "GQL_ABORT_ONLY_DEFAULT")
                 else False
             ),
         )
-        # abort no matter what
-        self.abort_only = options.pop("abort_only", False)
 
     def optimize(self, queryset):
         info = self.root_info
