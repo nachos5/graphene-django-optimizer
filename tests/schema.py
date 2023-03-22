@@ -52,6 +52,10 @@ class ItemInterface(graphene.Interface):
         "tests.schema.ItemType",
         name=graphene.String(required=True),
     )
+    aux_filtered_children = graphene.List(
+        "tests.schema.ItemType",
+        name=graphene.String(required=True),
+    )
     children_custom_filtered = gql_optimizer.field(
         ConnectionField("tests.schema.ItemConnection", filter_input=ItemFilterInput()),
         prefetch_related=_prefetch_children,
@@ -83,6 +87,20 @@ class ItemInterface(graphene.Interface):
     def resolve_filtered_children(root, info, name):
         return getattr(root, "gql_filtered_children_" + name)
 
+    @gql_optimizer.resolver_hints(
+        prefetch_related=lambda info, name: Prefetch(
+            "children",
+            queryset=gql_optimizer.query(
+                Item.objects.filter(name=f"some_prefix {name}"), info
+            ),
+            # Different queryset than resolve_filtered_children but same to_attr, on purpose
+            # to check equality of Prefetch is based only on to_attr attribute, as it is implemented in Django.
+            to_attr="gql_filtered_children_" + name,
+        ),
+    )
+    def resolve_aux_filtered_children(root, info, name):
+        return getattr(root, "gql_filtered_children_" + name)
+
     def resolve_children_custom_filtered(root, info, *_args):
         return getattr(root, "gql_custom_filtered_children")
 
@@ -104,6 +122,7 @@ class BaseItemType(OptimizedDjangoObjectType):
 
     class Meta:
         model = Item
+        fields = "__all__"
 
     @gql_optimizer.resolver_hints(
         model_field="children",
@@ -115,6 +134,8 @@ class BaseItemType(OptimizedDjangoObjectType):
 class ItemNode(BaseItemType):
     class Meta:
         model = Item
+        fields = "__all__"
+
         interfaces = (
             graphene.relay.Node,
             ItemInterface,
@@ -124,16 +145,19 @@ class ItemNode(BaseItemType):
 class SomeOtherItemType(OptimizedDjangoObjectType):
     class Meta:
         model = SomeOtherItem
+        fields = "__all__"
 
 
 class OtherItemType(OptimizedDjangoObjectType):
     class Meta:
         model = OtherItem
+        fields = "__all__"
 
 
 class ItemType(BaseItemType):
     class Meta:
         model = Item
+        fields = "__all__"
         interfaces = (ItemInterface,)
 
 
@@ -149,29 +173,34 @@ class DetailedInterface(graphene.Interface):
 class DetailedItemType(ItemType):
     class Meta:
         model = DetailedItem
+        fields = "__all__"
         interfaces = (ItemInterface, DetailedInterface)
 
 
 class RelatedItemType(ItemType):
     class Meta:
         model = RelatedItem
+        fields = "__all__"
         interfaces = (ItemInterface,)
 
 
 class ExtraDetailedItemType(DetailedItemType):
     class Meta:
         model = ExtraDetailedItem
+        fields = "__all__"
         interfaces = (ItemInterface,)
 
 
 class RelatedOneToManyItemType(OptimizedDjangoObjectType):
     class Meta:
         model = RelatedOneToManyItem
+        fields = "__all__"
 
 
 class UnrelatedModelType(OptimizedDjangoObjectType):
     class Meta:
         model = UnrelatedModel
+        fields = "__all__"
         interfaces = (DetailedInterface,)
 
 
@@ -205,6 +234,21 @@ class Query(graphene.ObjectType):
         return gql_optimizer.query(OtherItemType.objects.all(), info)
 
 
-schema = graphene.Schema(
-    query=Query, types=(UnrelatedModelType,), mutation=DummyItemMutation
-)
+class Schema(graphene.Schema):
+    @property
+    def query_type(self):
+        return self.graphql_schema.get_type("Query")
+
+    @property
+    def mutation_type(self):
+        return self.graphql_schema.get_type("Mutation")
+
+    @property
+    def subscription_type(self):
+        return self.graphql_schema.get_type("Subscription")
+
+    def get_type(self, _type):
+        return self.graphql_schema.get_type(_type)
+
+
+schema = Schema(query=Query, types=(UnrelatedModelType,), mutation=DummyItemMutation)
